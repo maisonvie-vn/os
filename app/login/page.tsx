@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabaseClient";
 function LoginContent() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginType, setLoginType] = useState<"password" | "magic">("password");
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -28,29 +30,59 @@ function LoginContent() {
       return;
     }
 
+    if (loginType === "password" && !password) {
+      setMessage({ type: "error", text: "Vui lòng nhập mật khẩu của bạn." });
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const supabase = createClient();
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
       
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${origin}/auth/callback`,
-        },
-      });
+      if (loginType === "password") {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
-      if (error) {
-        setMessage({
-          type: "error",
-          text: error.message === "Signups not allowed for this project" 
-            ? "Tài khoản email này chưa đăng ký hoặc không được phép tham gia hệ thống." 
-            : `Lỗi: ${error.message}`,
-        });
+        if (error) {
+          let errorMsg = error.message;
+          if (
+            error.status === 400 || 
+            error.message.toLowerCase().includes("invalid login credentials")
+          ) {
+            errorMsg = "Email hoặc mật khẩu không đúng.";
+          }
+          setMessage({
+            type: "error",
+            text: errorMsg,
+          });
+        } else {
+          // Success redirection using full page redirect to ensure cookie refresh
+          window.location.href = "/home";
+        }
       } else {
-        setMessage({
-          type: "success",
-          text: "Một liên kết đăng nhập đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư (và cả thư rác).",
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: `${origin}/auth/callback`,
+          },
         });
+
+        if (error) {
+          setMessage({
+            type: "error",
+            text: error.message === "Signups not allowed for this project" 
+              ? "Tài khoản email này chưa đăng ký hoặc không được phép tham gia hệ thống." 
+              : `Lỗi: ${error.message}`,
+          });
+        } else {
+          setMessage({
+            type: "success",
+            text: "Một liên kết đăng nhập đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư (và cả thư rác).",
+          });
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Không rõ nguyên nhân";
@@ -85,12 +117,44 @@ function LoginContent() {
           {/* Decorative ambient light */}
           <div className="absolute -left-16 -top-16 h-32 w-32 rounded-full bg-amber-500/10 blur-3xl"></div>
           
-          <form className="space-y-6" onSubmit={handleLogin}>
+          {/* Tabs Selector */}
+          <div className="relative z-10 mb-6 flex rounded-xl bg-zinc-900/60 p-1 border border-zinc-800">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginType("password");
+                setMessage(null);
+              }}
+              className={`flex-1 rounded-lg py-2 text-center text-xs font-semibold transition-all duration-200 ${
+                loginType === "password"
+                  ? "bg-zinc-800 text-white shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Đăng nhập mật khẩu
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginType("magic");
+                setMessage(null);
+              }}
+              className={`flex-1 rounded-lg py-2 text-center text-xs font-semibold transition-all duration-200 ${
+                loginType === "magic"
+                  ? "bg-zinc-800 text-white shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Gửi magic link
+            </button>
+          </div>
+
+          <form className="relative z-10 space-y-5" onSubmit={handleLogin}>
             <div>
               <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Địa chỉ Email
               </label>
-              <div className="mt-2">
+              <div className="mt-1.5">
                 <input
                   id="email"
                   name="email"
@@ -105,6 +169,28 @@ function LoginContent() {
                 />
               </div>
             </div>
+
+            {loginType === "password" && (
+              <div>
+                <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Mật khẩu
+                </label>
+                <div className="mt-1.5">
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="block w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none transition duration-200 focus:border-amber-500 focus:bg-zinc-900 focus:ring-1 focus:ring-amber-500"
+                    disabled={isLoading}
+                  />
+                </div>
+              </div>
+            )}
 
             {message && (
               <div
@@ -130,10 +216,10 @@ function LoginContent() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    <span>Đang gửi mã đăng nhập...</span>
+                    <span>{loginType === "password" ? "Đang đăng nhập..." : "Đang gửi..."}</span>
                   </div>
                 ) : (
-                  <span>Nhận Magic Link đăng nhập</span>
+                  <span>{loginType === "password" ? "Đăng nhập" : "Nhận Magic Link đăng nhập"}</span>
                 )}
               </button>
             </div>
