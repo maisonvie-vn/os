@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
@@ -95,6 +96,23 @@ export default async function HomePage() {
             <p className="text-lg text-zinc-300">
               MVOS foundation OK.
             </p>
+
+            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <Link
+                href="/log"
+                className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 text-center text-sm font-bold text-zinc-950 hover:from-amber-400 hover:to-amber-500 transition shadow-md shadow-amber-500/10"
+              >
+                ⚠️ Ghi Nhận Sự Cố
+              </Link>
+              {staff.role === "owner" && (
+                <Link
+                  href="/dashboard"
+                  className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900/50 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800 transition"
+                >
+                  📊 Bảng Tổng Hợp Tuần
+                </Link>
+              )}
+            </div>
 
             <div className="border-t border-zinc-800 pt-6 mt-6 space-y-2 text-sm text-zinc-500">
               <div>Thông tin tài khoản:</div>

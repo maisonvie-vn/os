@@ -91,11 +91,36 @@ create policy staff_write on staff for all
 
 ## 5. Lệnh Seed tài khoản Chủ sở hữu (Owner)
 
-Sau khi tài khoản người dùng đăng ký/đăng nhập lần đầu bằng email magic link qua trang `/login`, họ sẽ được tạo một bản ghi `uid` tương ứng trong bảng `auth.users` của Supabase.
+Sau khi tài khoản người dùng đăng ký/đăng nhập lần đầu bằng email magic link hoặc email + mật khẩu qua trang `/login`, họ sẽ được tạo một bản ghi `uid` tương ứng trong bảng `auth.users` của Supabase.
 
 Để cấp quyền Chủ sở hữu (Owner) cho tài khoản có email của anh Thành, chạy lệnh SQL sau trong **SQL Editor** trên Supabase (thay thế `<uuid>` bằng ID thực tế của user trong bảng `auth.users`):
 
 ```sql
 insert into staff(auth_user_id, full_name, role) 
-values ('<uuid>', 'Thành', 'owner');
+values ('<uuid>', 'Thành', 'owner')
+on conflict (auth_user_id) do nothing;
 ```
+
+---
+
+## 6. Hướng dẫn Vận hành & Bàn giao Hệ thống (Module Sự cố)
+
+Để MVOS hoạt động ổn định và hỗ trợ đội ngũ vận hành kế nhiệm, hãy tuân thủ 3 nguyên tắc kỹ thuật sau:
+
+1. **Khi thêm nhân viên mới được ghi sự cố**:
+   - **Bước 1**: Tạo tài khoản người dùng trong Supabase Dashboard (`Authentication` -> `Users` -> `Add user` -> `Create new user`, điền email + mật khẩu và tích chọn `Auto Confirm User`).
+   - **Bước 2**: Sao chép ID người dùng vừa tạo (UID).
+   - **Bước 3**: Chạy lệnh SQL sau trong `SQL Editor` để liên kết người dùng với bảng `staff` (không có bản ghi này, hệ thống sẽ chặn quyền ghi nhận sự cố):
+     ```sql
+     insert into staff (auth_user_id, full_name, role)
+     values ('<UID_CỦA_NHÂN_VIÊN>', 'Tên Nhân Viên', 'staff');
+     ```
+
+2. **Khi `/log` báo lỗi "relation does not exist"**:
+   - Lỗi này xảy ra khi mã nguồn trang ghi sự cố được deploy lên nhưng cấu trúc cơ sở dữ liệu tương ứng chưa được chạy trên Supabase.
+   - **Cách xử lý**: Sao chép nội dung file migration mới nhất (đường dẫn: [supabase/migrations/0002_incidents.sql](file:///d:/OS/supabase/migrations/0002_incidents.sql)), truy cập Supabase Dashboard -> `SQL Editor` -> tạo Query mới và bấm `Run`.
+
+3. **Khi đổi loại sự cố**:
+   - Không được tự ý chỉnh sửa cấu trúc enum bằng tay trên giao diện dashboard của Supabase.
+   - Phải tạo một file migration SQL mới để cập nhật kiểu dữ liệu enum `incident_type` nhằm đảm bảo tính thống nhất trong lịch sử phiên bản cơ sở dữ liệu.
+
