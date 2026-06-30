@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
@@ -18,6 +18,21 @@ interface Incident {
   created_at: string;
   created_by: string;
 }
+
+// Helper to get start and end of week (Monday - Sunday)
+const getWeekRange = (d: Date) => {
+  const start = new Date(d);
+  const day = start.getDay();
+  const diff = start.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is Sunday
+  start.setDate(diff);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+};
 
 function DashboardContent() {
   const router = useRouter();
@@ -67,26 +82,19 @@ function DashboardContent() {
     checkAuth();
   }, [router]);
 
-  // Helper to get start and end of week (Monday - Sunday)
-  const getWeekRange = (d: Date) => {
-    const start = new Date(d);
-    const day = start.getDay();
-    const diff = start.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is Sunday
-    start.setDate(diff);
-    start.setHours(0, 0, 0, 0);
+  const selectedDateStr = selectedDate.toDateString();
+  const { start: startOfWeek, end: endOfWeek } = useMemo(() => {
+    return getWeekRange(new Date(selectedDateStr));
+  }, [selectedDateStr]);
 
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-
-    return { start, end };
-  };
-
-  const { start: startOfWeek, end: endOfWeek } = getWeekRange(selectedDate);
+  const startOfWeekIso = startOfWeek.toISOString();
+  const endOfWeekIso = endOfWeek.toISOString();
 
   // 2. Fetch incidents for selected week
   useEffect(() => {
     if (checkingAuth || !isOwnerUser) return;
+
+    let isSubscribed = true;
 
     async function fetchIncidents() {
       setIsLoadingData(true);
@@ -95,22 +103,30 @@ function DashboardContent() {
         const { data, error } = await supabase
           .from("incidents")
           .select("*")
-          .gte("occurred_at", startOfWeek.toISOString())
-          .lte("occurred_at", endOfWeek.toISOString())
+          .gte("occurred_at", startOfWeekIso)
+          .lte("occurred_at", endOfWeekIso)
           .order("occurred_at", { ascending: true });
 
-        if (!error && data) {
-          setIncidents(data);
+        if (isSubscribed) {
+          if (!error && data) {
+            setIncidents(data);
+          }
         }
       } catch (err) {
         console.error("Lỗi lấy dữ liệu:", err);
       } finally {
-        setIsLoadingData(false);
+        if (isSubscribed) {
+          setIsLoadingData(false);
+        }
       }
     }
 
     fetchIncidents();
-  }, [selectedDate, checkingAuth, isOwnerUser, startOfWeek, endOfWeek]);
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [checkingAuth, isOwnerUser, startOfWeekIso, endOfWeekIso]);
 
   if (checkingAuth) {
     return (
