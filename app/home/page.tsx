@@ -97,19 +97,31 @@ export default async function HomePage() {
               MVOS foundation OK.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+              <Link
+                href="/checklist"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                📋 Checklist Ca
+              </Link>
+              <Link
+                href="/shift-report"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                📝 Báo Cáo Cuối Ca
+              </Link>
               <Link
                 href="/log"
-                className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 text-center text-sm font-bold text-zinc-950 hover:from-amber-400 hover:to-amber-500 transition shadow-md shadow-amber-500/10"
+                className="rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 text-center text-sm font-bold text-zinc-950 hover:from-amber-400 hover:to-amber-500 transition shadow-md shadow-amber-500/10"
               >
                 ⚠️ Ghi Nhận Sự Cố
               </Link>
               {staff.role === "owner" && (
                 <Link
                   href="/dashboard"
-                  className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900/50 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800 transition"
+                  className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-6 py-4 text-center text-sm font-bold text-amber-300 hover:bg-amber-500/20 transition"
                 >
-                  📊 Bảng Tổng Hợp Tuần
+                  📊 Báo Cáo Tổng Hợp
                 </Link>
               )}
             </div>

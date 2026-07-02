@@ -124,3 +124,27 @@ on conflict (auth_user_id) do nothing;
    - Không được tự ý chỉnh sửa cấu trúc enum bằng tay trên giao diện dashboard của Supabase.
    - Phải tạo một file migration SQL mới để cập nhật kiểu dữ liệu enum `incident_type` nhằm đảm bảo tính thống nhất trong lịch sử phiên bản cơ sở dữ liệu.
 
+---
+
+## 7. Hướng dẫn Vận hành & Bàn giao Hệ thống (Module Checklist & Báo Cáo Ca)
+
+### 7.1. Cách thêm/sửa mục checklist
+*   **Qua Giao Diện (Khuyên dùng)**: Người dùng có vai trò `owner` hoặc `manager` truy cập vào trang `/checklist` và chọn tab **Thiết Lập Mẫu**. Tại đây, bạn có thể:
+    *   Thêm mới mục checklist (nhập nội dung, thứ tự hiển thị `item_order`, chọn ca `TRUA`/`TOI` và giai đoạn `MO_CA`/`DONG_CA`).
+    *   Bật/Tắt trạng thái hoạt động (`is_active`) của từng mục mà không cần xóa để tránh làm mất lịch sử các ca cũ.
+    *   Sửa đổi trực tiếp nội dung hoặc số thứ tự sắp xếp của từng mục.
+*   **Qua SQL Editor (Supabase)**: Trong trường hợp cần thực hiện hàng loạt bằng SQL, có thể chạy mẫu lệnh sau:
+    ```sql
+    insert into checklist_templates (shift, phase, item_order, content, created_by)
+    values ('TRUA', 'MO_CA', 10, 'Kiểm tra vệ sinh sảnh đón khách', '<ID_NHÂN_VIÊN>');
+    ```
+
+### 7.2. Quy trình khi Duty Manager quên gửi báo cáo ca
+*   **Quy trình nhắc nhở**: Vào cuối mỗi ca (khoảng 14:30 đối với ca Trưa và 22:30 đối với ca Tối), Duty Manager ca tiếp theo hoặc Giám sát khu vực phải mở trang **Báo Cáo Tổng Hợp** (Dashboard) để kiểm tra cột trạng thái báo cáo ca. Nếu hiện **Chưa gửi**, cần nhắc nhở trực tiếp qua bộ đàm hoặc điện thoại để yêu cầu Duty Manager ca trước hoàn tất ngay.
+*   **Trách nhiệm**: Duty Manager trực ca chịu trách nhiệm hoàn toàn về việc ghi nhận đầy đủ checklist và gửi báo cáo trước khi giao ca. Do báo cáo cuối ca là **Append-only** (sau khi gửi sẽ khóa, không cho phép sửa đổi qua app), Duty Manager phải rà soát kỹ lưỡng các thông tin (đặc biệt là việc bàn giao ca sau) trước khi bấm gửi.
+
+### 7.3. Quy ước vận hành kênh thông tin
+*   **Kênh trao đổi nhanh**: Kênh WhatsApp nội bộ vẫn duy trì để trao đổi nhanh, cập nhật thời gian thực các vấn đề phát sinh tức thời hoặc trao đổi nghiệp vụ nhanh.
+*   **Báo cáo chính thức**: Báo cáo tổng kết ca và việc bàn giao ca sau **CHỈ TÍNH HỢP LỆ** trên hệ thống MVOS qua trang `/shift-report`. Mọi thông tin gửi tự do trên WhatsApp không được coi là báo cáo ca chính thức. Quy ước này đã được thống nhất với anh Thành (Owner) để làm cơ sở đánh giá chất lượng vận hành ca.
+
+
