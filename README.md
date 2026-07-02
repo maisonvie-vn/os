@@ -147,4 +147,33 @@ on conflict (auth_user_id) do nothing;
 *   **Kênh trao đổi nhanh**: Kênh WhatsApp nội bộ vẫn duy trì để trao đổi nhanh, cập nhật thời gian thực các vấn đề phát sinh tức thời hoặc trao đổi nghiệp vụ nhanh.
 *   **Báo cáo chính thức**: Báo cáo tổng kết ca và việc bàn giao ca sau **CHỈ TÍNH HỢP LỆ** trên hệ thống MVOS qua trang `/shift-report`. Mọi thông tin gửi tự do trên WhatsApp không được coi là báo cáo ca chính thức. Quy ước này đã được thống nhất với anh Thành (Owner) để làm cơ sở đánh giá chất lượng vận hành ca.
 
+---
+
+## 8. Hướng dẫn Vận hành & Bàn giao Hệ thống (Module Khách & Agency)
+
+### 8.1. Quy trình thêm agency mới và gộp tên thô (Merge Raw Entries)
+*   **Ai thực hiện**: Owner hoặc Giám sát (vai trò `manager`).
+*   **Khi nào thực hiện**: Mỗi tuần 1 lần (vào sáng Thứ 2) hoặc khi thấy danh sách tên thô chưa khớp xuất hiện nhiều.
+*   **Cách gộp**:
+    1.  Mở trang **Quản Lý Agency** (`/agencies`) -> chọn tab **Gộp Tên Thô**.
+    2.  Tại đây sẽ hiện danh sách các tên agency do Duty Manager gõ tay (chưa chọn dropdown chuẩn) và số lần xuất hiện.
+    3.  Chọn agency chuẩn từ danh sách thả xuống bên cạnh tên thô đó, sau đó bấm nút **Gộp**.
+    4.  Hệ thống sẽ tự động cập nhật ID của agency chuẩn cho toàn bộ các lượt đón đoàn (group visits) và toàn bộ các sự cố (incidents) liên quan đến tên thô đó trong lịch sử dữ liệu, đồng thời dọn sạch tên thô.
+
+### 8.2. Quy ước ghi nhận đoàn (Log Đoàn Hằng Ngày)
+*   **Quy tắc 100%**: Duty Manager bắt buộc phải log **TẤT CẢ** các đoàn khách lữ hành/agency phục vụ trong ca tại trang `/visits`, **kể cả các đoàn không có sự cố**.
+*   **Tại sao quan trọng**: Dữ liệu log đoàn đầy đủ làm mẫu số (denominator) để tính toán tỷ lệ sự cố và vẽ biểu đồ hiệu suất. Nếu Duty Manager chỉ log đoàn có sự cố, mọi tỷ lệ thống kê trên Dashboard sẽ bị sai lệch (tỷ lệ lỗi vọt lên 100% thay vì thực tế chỉ khoảng 1-2%).
+*   **Kiểm soát chất lượng**: Cuối mỗi ca, Giám sát ca đối chiếu số lượng đoàn log trên MVOS với số liệu thực tế ghi nhận trên phần mềm hóa đơn/sổ đặt trước khi khóa ca.
+
+### 8.3. Hướng dẫn đọc Dashboard "Sức Khỏe Agency" (Dành cho Owner)
+*   Truy cập **Báo Cáo Tổng Hợp** (`/dashboard`) -> chọn tab **Sức Khỏe Agency**.
+*   **Ý nghĩa các chỉ số**:
+    *   **Tháng này vs Tháng trước**: So sánh số lượng đoàn và số lượng khách của từng agency để biết đối tác nào đang tăng trưởng hoặc sụt giảm doanh số (hiển thị mũi tên ↑↓ kèm chênh lệch pax).
+    *   **Sự cố (180 ngày)**: Đếm số lượng sự cố lặp lại của từng agency để biết đoàn của họ hay gặp lỗi phục vụ/món ăn, hỗ trợ đàm phán giảm phàn nàn.
+    *   **Lần cuối đón đoàn**: Thời gian từ ngày đoàn cuối cùng của agency đó ghé nhà hàng đến ngày xem báo cáo.
+        *   🟢 **Mới đón (X ngày trước / Xanh)**: Quan hệ đối tác duy trì tốt.
+        *   🟡 **Nguy cơ (>30 ngày / Vàng)**: Đối tác đã im lặng hơn 1 tháng. Owner cần lên kế hoạch gửi email, gọi điện hỏi thăm hoặc gửi ưu đãi mới.
+        *   🔴 **Ngừng hoạt động (>60 ngày / Đỏ)**: Đối tác im lặng hơn 2 tháng, có dấu hiệu đã dịch chuyển đoàn sang đối thủ. Cần gọi điện trực tiếp hoặc tổ chức gặp mặt gấp để xử lý.
+
+
 

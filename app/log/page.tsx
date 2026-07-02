@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 
@@ -11,6 +11,11 @@ interface Staff {
   role: string;
   is_active: boolean;
   created_at: string;
+}
+
+interface Agency {
+  id: string;
+  name: string;
 }
 
 function LogContent() {
@@ -24,11 +29,18 @@ function LogContent() {
   const [severity, setSeverity] = useState<number>(1);
   const [groupName, setGroupName] = useState("");
   const [agency, setAgency] = useState("");
+  const [agencyId, setAgencyId] = useState<string | null>(null);
   const [totalGroupsInShift, setTotalGroupsInShift] = useState("");
   const [description, setDescription] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Autocomplete suggestions
+  const [agenciesList, setAgenciesList] = useState<Agency[]>([]);
+  const [filteredAgencies, setFilteredAgencies] = useState<Agency[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function checkAuth() {
@@ -52,9 +64,55 @@ function LogContent() {
 
       setStaff(staffData);
       setCheckingAuth(false);
+
+      // Load active agencies for autocomplete
+      const { data: agData } = await supabase
+        .from("agencies")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      if (agData) {
+        setAgenciesList(agData);
+      }
     }
     checkAuth();
   }, [router]);
+
+  // Autocomplete filtering
+  useEffect(() => {
+    if (agency.length < 1) {
+      setFilteredAgencies([]);
+      return;
+    }
+    const searchLower = agency.toLowerCase();
+    const matches = agenciesList.filter((a) =>
+      a.name.toLowerCase().includes(searchLower)
+    );
+    setFilteredAgencies(matches);
+  }, [agency, agenciesList]);
+
+  // Handle click outside dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Determine if typed name is unrecognized
+  const isUnrecognized = useMemo(() => {
+    if (!agency.trim()) return false;
+    if (agencyId) return false;
+    return !agenciesList.some(
+      (a) => a.name.toLowerCase() === agency.trim().toLowerCase()
+    );
+  }, [agency, agencyId, agenciesList]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,12 +125,28 @@ function LogContent() {
       const supabase = createClient();
       const totalGroups = totalGroupsInShift ? parseInt(totalGroupsInShift, 10) : null;
 
+      let finalAgencyId = null;
+      let finalAgencyText = agency.trim();
+
+      // Final validation to match selected item
+      const exactMatch = agenciesList.find(
+        (a) => a.name.toLowerCase() === finalAgencyText.toLowerCase()
+      );
+
+      if (exactMatch) {
+        finalAgencyId = exactMatch.id;
+        finalAgencyText = exactMatch.name;
+      } else if (agencyId) {
+        finalAgencyId = agencyId;
+      }
+
       const { error } = await supabase.from("incidents").insert({
         shift,
         type,
         severity,
         group_name: groupName || null,
-        agency: agency || null,
+        agency: finalAgencyText || null,
+        agency_id: finalAgencyId,
         total_groups_in_shift: totalGroups,
         description: description || null,
         created_by: staff.id,
@@ -82,11 +156,10 @@ function LogContent() {
         setMessage({ type: "error", text: `Lỗi: ${error.message}` });
       } else {
         setMessage({ type: "success", text: "Đã ghi ✓" });
-        // Reset inputs that change between incidents. 
-        // Keep shift and totalGroupsInShift intact for convenience if they record multiple incidents in a row.
         setTimeout(() => {
           setGroupName("");
           setAgency("");
+          setAgencyId(null);
           setDescription("");
           setMessage(null);
         }, 1000);
@@ -133,7 +206,7 @@ function LogContent() {
           <span>Trang chủ</span>
         </button>
         <h1 className="text-base font-bold text-white">Ghi Nhận Sự Cố</h1>
-        <div className="w-16"></div> {/* Spacer to center title */}
+        <div className="w-16"></div>
       </header>
 
       {/* Form Card Container */}
@@ -174,7 +247,7 @@ function LogContent() {
 
             {/* 2. Incident type selection */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-450 mb-2">
                 2. Loại sự cố
               </label>
               <div className="flex flex-col space-y-2">
@@ -200,7 +273,7 @@ function LogContent() {
 
             {/* 3. Severity Level */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-450 mb-2">
                 3. Mức độ nghiêm trọng
               </label>
               <div className="grid grid-cols-3 gap-3">
@@ -231,7 +304,7 @@ function LogContent() {
             {/* 4 & 5. Table and Agency */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="groupName" className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                <label htmlFor="groupName" className="block text-xs font-semibold uppercase tracking-wider text-zinc-455">
                   4. Đoàn / Bàn
                 </label>
                 <input
@@ -244,25 +317,57 @@ function LogContent() {
                   disabled={isLoading}
                 />
               </div>
-              <div>
-                <label htmlFor="agency" className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  5. Agency (Nguồn khách)
+              
+              {/* Autocomplete Agency Field */}
+              <div ref={dropdownRef}>
+                <label htmlFor="agency" className="flex justify-between items-center text-xs font-semibold uppercase tracking-wider text-zinc-455">
+                  <span>5. Agency</span>
+                  {isUnrecognized && (
+                    <span className="text-[8px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 lowercase">
+                      chưa có
+                    </span>
+                  )}
                 </label>
-                <input
-                  id="agency"
-                  type="text"
-                  value={agency}
-                  onChange={(e) => setAgency(e.target.value)}
-                  placeholder="LuxTravel / Tự do"
-                  className="mt-1.5 block w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-650 outline-none transition focus:border-amber-500 focus:bg-zinc-900"
-                  disabled={isLoading}
-                />
+                <div className="relative">
+                  <input
+                    id="agency"
+                    type="text"
+                    autoComplete="off"
+                    value={agency}
+                    onChange={(e) => {
+                      setAgency(e.target.value);
+                      setAgencyId(null);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    placeholder="LuxTravel / Tự do"
+                    className="mt-1.5 block w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-650 outline-none transition focus:border-amber-500 focus:bg-zinc-900"
+                    disabled={isLoading}
+                  />
+                  {showSuggestions && filteredAgencies.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto z-50 rounded-xl border border-zinc-850 bg-zinc-900 shadow-2xl divide-y divide-zinc-850">
+                      {filteredAgencies.map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            setAgency(item.name);
+                            setAgencyId(item.id);
+                            setShowSuggestions(false);
+                          }}
+                          className="px-4 py-2.5 text-xs text-zinc-200 hover:bg-zinc-800 hover:text-white cursor-pointer transition"
+                        >
+                          {item.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* 6. Total groups in shift */}
             <div>
-              <label htmlFor="totalGroupsInShift" className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              <label htmlFor="totalGroupsInShift" className="block text-xs font-semibold uppercase tracking-wider text-zinc-450">
                 6. Tổng đoàn ca này (để tính % tỉ lệ sự cố)
               </label>
               <input
@@ -280,7 +385,7 @@ function LogContent() {
 
             {/* 7. Description */}
             <div>
-              <label htmlFor="description" className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              <label htmlFor="description" className="block text-xs font-semibold uppercase tracking-wider text-zinc-450">
                 7. Mô tả ngắn (1 dòng)
               </label>
               <input

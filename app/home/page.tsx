@@ -111,11 +111,25 @@ export default async function HomePage() {
                 📝 Báo Cáo Cuối Ca
               </Link>
               <Link
+                href="/visits"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                👥 Log Đoàn Hằng Ngày
+              </Link>
+              <Link
                 href="/log"
                 className="rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 text-center text-sm font-bold text-zinc-950 hover:from-amber-400 hover:to-amber-500 transition shadow-md shadow-amber-500/10"
               >
                 ⚠️ Ghi Nhận Sự Cố
               </Link>
+              {(staff.role === "owner" || staff.role === "manager") && (
+                <Link
+                  href="/agencies"
+                  className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+                >
+                  🏢 Quản Lý Agency
+                </Link>
+              )}
               {staff.role === "owner" && (
                 <Link
                   href="/dashboard"

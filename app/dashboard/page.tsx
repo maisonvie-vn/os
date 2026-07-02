@@ -11,6 +11,7 @@ interface Incident {
   shift: "TRUA" | "TOI";
   group_name: string | null;
   agency: string | null;
+  agency_id: string | null;
   type: "PHUC_VU_MAY_MOC" | "MON_LECH_CHUAN" | "MON_CHAM" | "ORDER_SAI" | "KHIEU_NAI_KHAC";
   description: string | null;
   severity: number;
@@ -52,6 +53,27 @@ interface ChecklistEntry {
   checked_by: string | null;
 }
 
+interface Agency {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  note: string | null;
+  is_active: boolean;
+}
+
+interface GroupVisit {
+  id: string;
+  visit_date: string;
+  shift: "TRUA" | "TOI";
+  agency_id: string | null;
+  agency_name_raw: string | null;
+  group_name: string | null;
+  pax: number;
+  note: string | null;
+}
+
 // Helper to get start and end of week (Monday - Sunday)
 const getWeekRange = (d: Date) => {
   const start = new Date(d);
@@ -67,13 +89,31 @@ const getWeekRange = (d: Date) => {
   return { start, end };
 };
 
+// Helper for date differences in days (timezone-safe date-only comparison)
+const getDaysDiff = (date1: Date, date2: Date) => {
+  const d1 = new Date(date1.getFullYear(), date1.getMonth(), date1.getDate());
+  const d2 = new Date(date2.getFullYear(), date2.getMonth(), date2.getDate());
+  const diffTime = d1.getTime() - d2.getTime();
+  return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+};
+
+const incidentTypes = [
+  { value: "PHUC_VU_MAY_MOC", label: "⚙️ Phục vụ máy móc" },
+  { value: "MON_LECH_CHUAN", label: "🍲 Món lệch chuẩn" },
+  { value: "MON_CHAM", label: "⏱️ Món chậm" },
+  { value: "ORDER_SAI", label: "📝 Order sai" },
+  { value: "KHIEU_NAI_KHAC", label: "💬 Khiếu nại khác" },
+];
+
+const daysOfWeek = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"];
+
 function DashboardContent() {
   const router = useRouter();
   const [isOwnerUser, setIsOwnerUser] = useState<boolean | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<"incidents" | "reports">("incidents");
+  const [activeTab, setActiveTab] = useState<"incidents" | "reports" | "agencies">("incidents");
 
   // Date filters
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -83,6 +123,8 @@ function DashboardContent() {
   const [reports, setReports] = useState<ShiftReport[]>([]);
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([]);
   const [checklistEntries, setChecklistEntries] = useState<ChecklistEntry[]>([]);
+  const [groupVisits, setGroupVisits] = useState<GroupVisit[]>([]);
+  const [agencies, setAgencies] = useState<Agency[]>([]);
   const [staffList, setStaffList] = useState<Record<string, string>>({}); // id -> full_name mapping
 
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -132,11 +174,11 @@ function DashboardContent() {
   }, [router]);
 
   const selectedDateStr = selectedDate.toDateString();
+  
   const { start: startOfWeek, end: endOfWeek } = useMemo(() => {
     return getWeekRange(new Date(selectedDateStr));
   }, [selectedDateStr]);
 
-  const startOfWeekIso = startOfWeek.toISOString();
   const endOfWeekIso = endOfWeek.toISOString();
 
   // Date-only strings for querying date columns in Supabase
@@ -153,6 +195,22 @@ function DashboardContent() {
     const d = String(endOfWeek.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   }, [endOfWeek]);
+
+  // Fetch range: 180 days before selected week
+  const fetchStartDateOnly = useMemo(() => {
+    const temp = new Date(startOfWeek);
+    temp.setDate(startOfWeek.getDate() - 180);
+    const y = temp.getFullYear();
+    const m = String(temp.getMonth() + 1).padStart(2, "0");
+    const d = String(temp.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }, [startOfWeek]);
+
+  const fetchStartIso = useMemo(() => {
+    const temp = new Date(startOfWeek);
+    temp.setDate(startOfWeek.getDate() - 180);
+    return temp.toISOString();
+  }, [startOfWeek]);
 
   // Calculate 7-day reports & checklists mapping
   const weekDaysList = useMemo(() => {
@@ -239,7 +297,7 @@ function DashboardContent() {
     };
   }, [selectedShiftDetails, reports, checklistTemplates, checklistEntries, staffList]);
 
-  // 2. Fetch all required data for the selected week
+  // 2. Fetch all required data for the selected week & last 180 days
   useEffect(() => {
     if (checkingAuth || !isOwnerUser) return;
 
@@ -250,15 +308,15 @@ function DashboardContent() {
       try {
         const supabase = createClient();
 
-        // Query incidents
+        // Query incidents (last 180 days)
         const incidentsPromise = supabase
           .from("incidents")
           .select("*")
-          .gte("occurred_at", startOfWeekIso)
+          .gte("occurred_at", fetchStartIso)
           .lte("occurred_at", endOfWeekIso)
           .order("occurred_at", { ascending: true });
 
-        // Query shift reports
+        // Query shift reports (selected week)
         const reportsPromise = supabase
           .from("shift_reports")
           .select("*")
@@ -266,29 +324,45 @@ function DashboardContent() {
           .lte("work_date", endDateOnly)
           .order("work_date", { ascending: true });
 
-        // Query checklist templates (fetch all active)
+        // Query checklist templates (all)
         const templatesPromise = supabase
           .from("checklist_templates")
           .select("*")
           .order("item_order", { ascending: true });
 
-        // Query checklist entries for the week
+        // Query checklist entries (selected week)
         const entriesPromise = supabase
           .from("shift_checklist_entries")
           .select("*")
           .gte("work_date", startDateOnly)
           .lte("work_date", endDateOnly);
 
+        // Query group visits (last 180 days)
+        const visitsPromise = supabase
+          .from("group_visits")
+          .select("*")
+          .gte("visit_date", fetchStartDateOnly)
+          .lte("visit_date", endDateOnly)
+          .order("visit_date", { ascending: true });
+
+        // Query agencies
+        const agenciesPromise = supabase
+          .from("agencies")
+          .select("*")
+          .order("name", { ascending: true });
+
         // Query staff
         const staffPromise = supabase
           .from("staff")
           .select("id, full_name");
 
-        const [incRes, repRes, tplRes, entRes, stfRes] = await Promise.all([
+        const [incRes, repRes, tplRes, entRes, visRes, agRes, stfRes] = await Promise.all([
           incidentsPromise,
           reportsPromise,
           templatesPromise,
           entriesPromise,
+          visitsPromise,
+          agenciesPromise,
           staffPromise,
         ]);
 
@@ -297,6 +371,8 @@ function DashboardContent() {
           if (!repRes.error && repRes.data) setReports(repRes.data);
           if (!tplRes.error && tplRes.data) setChecklistTemplates(tplRes.data);
           if (!entRes.error && entRes.data) setChecklistEntries(entRes.data);
+          if (!visRes.error && visRes.data) setGroupVisits(visRes.data);
+          if (!agRes.error && agRes.data) setAgencies(agRes.data);
           if (!stfRes.error && stfRes.data) {
             const mapper: Record<string, string> = {};
             stfRes.data.forEach((s) => {
@@ -319,99 +395,145 @@ function DashboardContent() {
     return () => {
       isSubscribed = false;
     };
-  }, [checkingAuth, isOwnerUser, startOfWeekIso, endOfWeekIso, startDateOnly, endDateOnly]);
+  }, [checkingAuth, isOwnerUser, fetchStartIso, endOfWeekIso, startDateOnly, endDateOnly, fetchStartDateOnly]);
 
-  if (checkingAuth) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-100">
-        <div className="animate-pulse text-zinc-400 text-sm">Đang xác thực quyền truy cập...</div>
-      </main>
-    );
-  }
+  // Statistics calculations for the Incident Tab (week only)
+  const weekIncidents = useMemo(() => {
+    return incidents.filter((inc) => {
+      const date = new Date(inc.occurred_at);
+      return date >= startOfWeek && date <= endOfWeek;
+    });
+  }, [incidents, startOfWeek, endOfWeek]);
 
-  if (isOwnerUser === false) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
-        <div className="w-full max-w-md space-y-4 rounded-3xl border border-rose-950/40 bg-zinc-900/40 p-8 shadow-2xl backdrop-blur-xl text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-950/50 text-rose-400">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold text-rose-300">Từ chối truy cập</h2>
-          <p className="text-sm text-zinc-400">Chỉ chủ sở hữu xem được.</p>
-          <button
-            onClick={() => router.push("/home")}
-            className="mt-4 w-full rounded-xl bg-zinc-800 hover:bg-zinc-700 py-3 text-sm font-semibold transition"
-          >
-            Quay lại Trang chủ
-          </button>
-        </div>
-      </main>
-    );
-  }
+  const totalIncidents = weekIncidents.length;
 
-  // Calculate Statistics for Incidents Tab
-  const totalIncidents = incidents.length;
+  const totalGroupsServed = useMemo(() => {
+    // Sum total pax in group_visits for the selected week
+    const weekVisits = groupVisits.filter(v => v.visit_date >= startDateOnly && v.visit_date <= endDateOnly);
+    return weekVisits.length;
+  }, [groupVisits, startDateOnly, endDateOnly]);
 
-  const uniqueShifts: Record<string, number> = {};
-  incidents.forEach((inc) => {
-    const dateStr = new Date(inc.occurred_at).toISOString().split("T")[0];
-    const shiftKey = `${dateStr}_${inc.shift}`;
-    if (inc.total_groups_in_shift !== null && inc.total_groups_in_shift !== undefined) {
-      uniqueShifts[shiftKey] = Math.max(uniqueShifts[shiftKey] || 0, inc.total_groups_in_shift);
-    }
-  });
-  const totalGroupsServed = Object.values(uniqueShifts).reduce((sum, val) => sum + val, 0);
   const overallIncidentRate = totalGroupsServed > 0 ? (totalIncidents / totalGroupsServed) * 100 : 0;
 
-  const incidentTypes = [
-    { value: "PHUC_VU_MAY_MOC", label: "⚙️ Phục vụ máy móc" },
-    { value: "MON_LECH_CHUAN", label: "🍲 Món lệch chuẩn" },
-    { value: "MON_CHAM", label: "⏱️ Món chậm" },
-    { value: "ORDER_SAI", label: "📝 Order sai" },
-    { value: "KHIEU_NAI_KHAC", label: "💬 Khiếu nại khác" },
-  ];
+  const typeSummary = useMemo(() => {
+    return incidentTypes.map((t) => {
+      const matched = weekIncidents.filter((inc) => inc.type === t.value);
+      const count = matched.length;
+      const rate = totalGroupsServed > 0 ? (count / totalGroupsServed) * 100 : 0;
 
-  const typeSummary = incidentTypes.map((t) => {
-    const matched = incidents.filter((inc) => inc.type === t.value);
-    const count = matched.length;
-    const rate = totalGroupsServed > 0 ? (count / totalGroupsServed) * 100 : 0;
+      const agenciesMap: Record<string, number> = {};
+      matched.forEach((inc) => {
+        if (inc.agency_id) {
+          const match = agencies.find(a => a.id === inc.agency_id);
+          if (match) {
+            agenciesMap[match.name] = (agenciesMap[match.name] || 0) + 1;
+          }
+        } else if (inc.agency) {
+          const agencyName = inc.agency.trim();
+          agenciesMap[agencyName] = (agenciesMap[agencyName] || 0) + 1;
+        }
+      });
 
-    const agencies: Record<string, number> = {};
-    matched.forEach((inc) => {
-      if (inc.agency) {
-        const agencyName = inc.agency.trim();
-        agencies[agencyName] = (agencies[agencyName] || 0) + 1;
-      }
+      let topAgency = "—";
+      let maxCount = 0;
+      Object.entries(agenciesMap).forEach(([name, val]) => {
+        if (val > maxCount) {
+          maxCount = val;
+          topAgency = `${name} (${val} lần)`;
+        }
+      });
+
+      return {
+        label: t.label,
+        count,
+        rate,
+        topAgency,
+      };
     });
+  }, [weekIncidents, totalGroupsServed, agencies]);
 
-    let topAgency = "—";
-    let maxCount = 0;
-    Object.entries(agencies).forEach(([name, val]) => {
-      if (val > maxCount) {
-        maxCount = val;
-        topAgency = `${name} (${val} lần)`;
-      }
+  const chartData = useMemo(() => {
+    return daysOfWeek.map((dayName, idx) => {
+      const targetDayNum = idx === 6 ? 0 : idx + 1;
+      const count = weekIncidents.filter((inc) => {
+        const dateObj = new Date(inc.occurred_at);
+        return dateObj.getDay() === targetDayNum;
+      }).length;
+      return { name: dayName, "Số sự cố": count };
     });
+  }, [weekIncidents]);
 
-    return {
-      label: t.label,
-      count,
-      rate,
-      topAgency,
-    };
-  });
+  // Agency Health calculations (relatives to selectedDate)
+  const agencyHealthList = useMemo(() => {
+    // Month boundaries
+    const thisMonthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    const thisMonthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0, 23, 59, 59, 999);
 
-  const daysOfWeek = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"];
-  const chartData = daysOfWeek.map((dayName, idx) => {
-    const targetDayNum = idx === 6 ? 0 : idx + 1;
-    const count = incidents.filter((inc) => {
-      const dateObj = new Date(inc.occurred_at);
-      return dateObj.getDay() === targetDayNum;
-    }).length;
-    return { name: dayName, "Số sự cố": count };
-  });
+    const lastMonthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 0, 23, 59, 59, 999);
+
+    return agencies.map((agency) => {
+      // 1. Filter visits
+      const agencyVisits = groupVisits.filter(v => v.agency_id === agency.id);
+
+      // This Month
+      const thisMonthMatched = agencyVisits.filter(v => {
+        const d = new Date(v.visit_date);
+        return d >= thisMonthStart && d <= thisMonthEnd;
+      });
+      const thisMonthGroups = thisMonthMatched.length;
+      const thisMonthPax = thisMonthMatched.reduce((sum, v) => sum + v.pax, 0);
+
+      // Last Month
+      const lastMonthMatched = agencyVisits.filter(v => {
+        const d = new Date(v.visit_date);
+        return d >= lastMonthStart && d <= lastMonthEnd;
+      });
+      const lastMonthGroups = lastMonthMatched.length;
+      const lastMonthPax = lastMonthMatched.reduce((sum, v) => sum + v.pax, 0);
+
+      // Trend
+      const paxTrend = thisMonthPax - lastMonthPax;
+
+      // 2. Incident Count (180 days)
+      const agencyIncidents = incidents.filter(inc => inc.agency_id === agency.id);
+      const incidentsCount = agencyIncidents.length;
+
+      // 3. Last visit date & days diff
+      let lastVisitDate: Date | null = null;
+      let daysSinceLast = -1;
+
+      if (agencyVisits.length > 0) {
+        // Find latest date
+        const sorted = [...agencyVisits].sort((a, b) =>
+          new Date(b.visit_date).getTime() - new Date(a.visit_date).getTime()
+        );
+        lastVisitDate = new Date(sorted[0].visit_date);
+        daysSinceLast = getDaysDiff(selectedDate, lastVisitDate);
+      }
+
+      return {
+        id: agency.id,
+        name: agency.name,
+        contactPerson: agency.contact_person,
+        phone: agency.phone,
+        is_active: agency.is_active,
+        thisMonthGroups,
+        thisMonthPax,
+        lastMonthGroups,
+        lastMonthPax,
+        paxTrend,
+        incidentsCount,
+        lastVisitDate,
+        daysSinceLast,
+      };
+    }).sort((a, b) => {
+      // Sort by status risk: active but silent longest first, followed by others
+      if (a.daysSinceLast === -1) return 1;
+      if (b.daysSinceLast === -1) return -1;
+      return b.daysSinceLast - a.daysSinceLast;
+    });
+  }, [agencies, groupVisits, incidents, selectedDate]);
 
   const changeWeek = (offset: number) => {
     const newDate = new Date(selectedDate);
@@ -511,6 +633,16 @@ function DashboardContent() {
           >
             📝 Báo Cáo Ca & Checklist
           </button>
+          <button
+            onClick={() => setActiveTab("agencies")}
+            className={`py-3 px-6 text-sm font-semibold border-b-2 transition ${
+              activeTab === "agencies"
+                ? "border-amber-500 text-white"
+                : "border-transparent text-zinc-450 hover:text-zinc-350"
+            }`}
+          >
+            🏢 Sức Khỏe Agency
+          </button>
         </div>
       </div>
 
@@ -602,14 +734,14 @@ function DashboardContent() {
             )}
           </div>
 
-          {/* Raw List */}
+          {/* Raw List (Selected Week Only) */}
           <div className="rounded-2xl border border-zinc-850 bg-zinc-900/20 p-6">
             <h2 className="text-base font-bold text-white mb-4">Danh sách sự cố thô (Tuần này)</h2>
-            {incidents.length === 0 ? (
+            {weekIncidents.length === 0 ? (
               <div className="text-center py-6 text-zinc-500 text-sm">Chưa có sự cố nào được ghi nhận.</div>
             ) : (
               <div className="space-y-3">
-                {incidents.map((inc) => (
+                {weekIncidents.map((inc) => (
                   <div key={inc.id} className="rounded-xl border border-zinc-850 bg-zinc-900/30 p-4 text-sm space-y-1">
                     <div className="flex justify-between items-center">
                       <span className="font-semibold text-zinc-200">
@@ -626,7 +758,7 @@ function DashboardContent() {
                       </span>
                     </div>
                     <div className="text-xs text-zinc-550">
-                      Ca: {inc.shift === "TRUA" ? "Trưa" : "Tối"} | Bàn: {inc.group_name || "—"} | Agency: {inc.agency || "—"} | Thời điểm: {new Date(inc.occurred_at).toLocaleTimeString("vi-VN")} - {formatDate(new Date(inc.occurred_at))}
+                      Ca: {inc.shift === "TRUA" ? "Trưa" : "Tối"} | Bàn: {inc.group_name || "—"} | Agency: {inc.agency_id ? agencies.find(a=>a.id===inc.agency_id)?.name : inc.agency || "—"} | Thời điểm: {new Date(inc.occurred_at).toLocaleTimeString("vi-VN")} - {formatDate(new Date(inc.occurred_at))}
                     </div>
                     {inc.description && (
                       <div className="text-zinc-450 mt-1 font-mono text-xs">
@@ -639,7 +771,7 @@ function DashboardContent() {
             )}
           </div>
         </div>
-      ) : (
+      ) : activeTab === "reports" ? (
         /* SHIFT REPORTS TAB CONTENT */
         <div className="mx-auto w-full max-w-4xl px-4 mt-6 space-y-6">
           <div className="space-y-4">
@@ -758,6 +890,109 @@ function DashboardContent() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      ) : (
+        /* AGENCY HEALTH TAB CONTENT */
+        <div className="mx-auto w-full max-w-4xl px-4 mt-6 space-y-6">
+          <div className="rounded-2xl border border-zinc-850 bg-zinc-900/20 p-6">
+            <h2 className="text-base font-bold text-white mb-2">Bảng Theo Dõi Sức Khỏe Quan Hệ Agency</h2>
+            <p className="text-xs text-zinc-450 mb-6">
+              Màu sắc lần cuối mang đoàn: <span className="text-emerald-400 font-semibold">Xanh</span> (đón gần đây) • <span className="text-amber-400 font-semibold">Vàng</span> (&gt;30 ngày chưa có đoàn - cần hỏi thăm) • <span className="text-rose-400 font-semibold">Đỏ</span> (&gt;60 ngày chưa có đoàn - nguy cơ mất đối tác).
+            </p>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-zinc-300">
+                <thead className="bg-zinc-900/40 text-[10px] font-bold uppercase tracking-wider text-zinc-450 border-b border-zinc-800">
+                  <tr>
+                    <th className="py-3 px-4">Tên Agency</th>
+                    <th className="py-3 px-4 text-center">Đoàn/Khách tháng này</th>
+                    <th className="py-3 px-4 text-center">Đoàn/Khách tháng trước</th>
+                    <th className="py-3 px-4 text-center">Xu Hướng Khách</th>
+                    <th className="py-3 px-4 text-center">Sự Cố (180 ngày)</th>
+                    <th className="py-3 px-4 text-center">Lần cuối đón đoàn</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-850">
+                  {agencyHealthList.map((row, idx) => {
+                    // Decide status color
+                    let statusColor = "text-zinc-400 bg-zinc-900/50 border border-zinc-850";
+                    let statusLabel = "Chưa có đoàn";
+                    
+                    if (row.daysSinceLast !== -1) {
+                      if (row.daysSinceLast > 60) {
+                        statusColor = "text-rose-400 bg-rose-950/20 border border-rose-900/40";
+                        statusLabel = `Im lặng ${row.daysSinceLast} ngày`;
+                      } else if (row.daysSinceLast > 30) {
+                        statusColor = "text-amber-400 bg-amber-950/20 border border-amber-900/40";
+                        statusLabel = `Im lặng ${row.daysSinceLast} ngày`;
+                      } else {
+                        statusColor = "text-emerald-400 bg-emerald-950/20 border border-emerald-900/40";
+                        statusLabel = `${row.daysSinceLast === 0 ? "Hôm nay" : `${row.daysSinceLast} ngày trước`}`;
+                      }
+                    }
+
+                    return (
+                      <tr key={idx} className="hover:bg-zinc-900/20 transition">
+                        <td className="py-3.5 px-4 font-bold text-zinc-200">
+                          {row.name}
+                          <span className="block font-normal text-[10px] text-zinc-500 mt-0.5">
+                            {row.contactPerson ? `${row.contactPerson} (${row.phone || "—"})` : "Chưa cập nhật liên hệ"}
+                          </span>
+                        </td>
+                        
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="font-semibold text-zinc-200">{row.thisMonthGroups} đoàn</span>
+                          <span className="block text-[10px] text-zinc-500 mt-0.5">{row.thisMonthPax} khách</span>
+                        </td>
+                        
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="text-zinc-400">{row.lastMonthGroups} đoàn</span>
+                          <span className="block text-[10px] text-zinc-500 mt-0.5">{row.lastMonthPax} khách</span>
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center">
+                          {row.paxTrend > 0 ? (
+                            <span className="text-emerald-450 font-bold text-xs flex items-center justify-center">
+                              ↑ (+{row.paxTrend})
+                            </span>
+                          ) : row.paxTrend < 0 ? (
+                            <span className="text-rose-450 font-bold text-xs flex items-center justify-center">
+                              ↓ ({row.paxTrend})
+                            </span>
+                          ) : (
+                            <span className="text-zinc-500 font-bold text-xs flex items-center justify-center">
+                              →
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center">
+                          {row.incidentsCount > 0 ? (
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950/50 border border-rose-900/50 text-rose-350">
+                              {row.incidentsCount} lần
+                            </span>
+                          ) : (
+                            <span className="text-zinc-550">—</span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex flex-col items-center justify-center space-y-1">
+                            <span className="text-[10px] text-zinc-350 font-mono">
+                              {row.lastVisitDate ? new Date(row.lastVisitDate).toLocaleDateString("vi-VN") : "—"}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${statusColor}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
