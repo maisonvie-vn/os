@@ -86,3 +86,22 @@ body {
   box-shadow: 0 0 15px rgba(168, 136, 78, 0.2);
   transform: translateY(-1px);
 }
+
+/* Mobile Ready Overrides */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+input[type="datetime-local"],
+select,
+textarea {
+  font-size: 16px !important;
+}
+
+button,
+a.btn,
+select,
+input[type="submit"] {
+  min-height: 44px;
+}

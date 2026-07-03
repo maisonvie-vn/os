@@ -11,6 +11,10 @@ const config: Config = {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
+        zinc: {
+          950: "#102B2A",
+        },
+        black: "#102B2A",
       },
     },
   },
