@@ -18,6 +18,11 @@ interface Incident {
   total_groups_in_shift: number | null;
   created_at: string;
   created_by: string;
+  status?: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "FOLLOWED_UP";
+  assigned_to?: string | null;
+  resolution_note?: string | null;
+  resolved_at?: string | null;
+  agency_followed_up?: boolean;
 }
 
 interface ShiftReport {
@@ -36,7 +41,7 @@ interface ShiftReport {
 interface ChecklistTemplate {
   id: string;
   shift: "TRUA" | "TOI";
-  phase: "MO_CA" | "DONG_CA";
+  phase: "MO_CA" | "DONG_CA" | "ATTP" | "TAP_VU" | "BAO_VE";
   item_order: number;
   content: string;
   is_active: boolean;
@@ -111,9 +116,10 @@ function DashboardContent() {
   const router = useRouter();
   const [isOwnerUser, setIsOwnerUser] = useState<boolean | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<"incidents" | "reports" | "agencies">("incidents");
+  const [activeTab, setActiveTab] = useState<"incidents" | "reports" | "agencies" | "bookings" | "staff" | "safety">("incidents");
 
   // Date filters
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -126,15 +132,45 @@ function DashboardContent() {
   const [groupVisits, setGroupVisits] = useState<GroupVisit[]>([]);
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [staffList, setStaffList] = useState<Record<string, string>>({}); // id -> full_name mapping
+  const [staffRawList, setStaffRawList] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [venues, setVenues] = useState<any[]>([]);
+  const [sopDocuments, setSopDocuments] = useState<any[]>([]);
+  const [sopAcknowledgements, setSopAcknowledgements] = useState<any[]>([]);
+  const [equipmentList, setEquipmentList] = useState<any[]>([]);
+  const [tempLogs, setTempLogs] = useState<any[]>([]);
+  const [foodSamples, setFoodSamples] = useState<any[]>([]);
+  const [licenses, setLicenses] = useState<any[]>([]);
 
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+
+  // Incident editing states
+  const [editingIncident, setEditingIncident] = useState<Incident | null>(null);
+  const [editStatus, setEditStatus] = useState<string>("OPEN");
+  const [editAssignedTo, setEditAssignedTo] = useState<string>("");
+  const [editResolutionNote, setEditResolutionNote] = useState<string>("");
+  const [editResolvedAt, setEditResolvedAt] = useState<string>("");
+  const [editAgencyFollowedUp, setEditAgencyFollowedUp] = useState<boolean>(false);
+  const [isSavingIncident, setIsSavingIncident] = useState<boolean>(false);
 
   // Modal details state
   const [selectedShiftDetails, setSelectedShiftDetails] = useState<{
     dateStr: string;
     shift: "TRUA" | "TOI";
   } | null>(null);
+
+  // Auto set resolved_at when status is RESOLVED
+  useEffect(() => {
+    if (editStatus === "RESOLVED" && !editResolvedAt) {
+      const now = new Date();
+      const offsetMs = now.getTimezoneOffset() * 60 * 1000;
+      const localISOTime = new Date(now.getTime() - offsetMs).toISOString().slice(0, 16);
+      setEditResolvedAt(localISOTime);
+    }
+  }, [editStatus, editResolvedAt]);
+
+  const isWriteAllowed = currentUser?.role === "owner" || currentUser?.role === "manager";
 
   useEffect(() => {
     setIsMounted(true);
@@ -161,7 +197,9 @@ function DashboardContent() {
         return;
       }
 
-      if (staffData.role !== "owner") {
+      setCurrentUser(staffData);
+
+      if (staffData.role !== "owner" && staffData.role !== "manager" && staffData.role !== "finance") {
         setIsOwnerUser(false);
         setCheckingAuth(false);
         return;
@@ -356,7 +394,52 @@ function DashboardContent() {
           .from("staff")
           .select("id, full_name");
 
-        const [incRes, repRes, tplRes, entRes, visRes, agRes, stfRes] = await Promise.all([
+        // Query bookings
+        const bookingsPromise = supabase
+          .from("bookings")
+          .select("*, venues(*), agencies(*)")
+          .order("starts_at", { ascending: true });
+
+        // Query venues
+        const venuesPromise = supabase
+          .from("venues")
+          .select("*")
+          .order("name", { ascending: true });
+
+        // Query sop_documents
+        const sopDocsPromise = supabase
+          .from("sop_documents")
+          .select("*")
+          .eq("is_active", true)
+          .order("title", { ascending: true });
+
+        // Query sop_acknowledgements
+        const sopAcksPromise = supabase
+          .from("sop_acknowledgements")
+          .select("*");
+
+        const eqPromise = supabase
+          .from("equipment")
+          .select("*")
+          .eq("is_active", true);
+
+        const tlPromise = supabase
+          .from("temp_logs")
+          .select("*, equipment(*)")
+          .order("logged_at", { ascending: false });
+
+        const fsPromise = supabase
+          .from("food_samples")
+          .select("*")
+          .order("stored_at", { ascending: false });
+
+        const licPromise = supabase
+          .from("licenses")
+          .select("*")
+          .eq("is_active", true)
+          .order("expires_on", { ascending: true });
+
+        const [incRes, repRes, tplRes, entRes, visRes, agRes, stfRes, bookRes, venRes, sopDocRes, sopAckRes, eqRes, tlRes, fsRes, licRes] = await Promise.all([
           incidentsPromise,
           reportsPromise,
           templatesPromise,
@@ -364,6 +447,14 @@ function DashboardContent() {
           visitsPromise,
           agenciesPromise,
           staffPromise,
+          bookingsPromise,
+          venuesPromise,
+          sopDocsPromise,
+          sopAcksPromise,
+          eqPromise,
+          tlPromise,
+          fsPromise,
+          licPromise,
         ]);
 
         if (isSubscribed) {
@@ -373,7 +464,16 @@ function DashboardContent() {
           if (!entRes.error && entRes.data) setChecklistEntries(entRes.data);
           if (!visRes.error && visRes.data) setGroupVisits(visRes.data);
           if (!agRes.error && agRes.data) setAgencies(agRes.data);
+          if (!bookRes.error && bookRes.data) setBookings(bookRes.data);
+          if (!venRes.error && venRes.data) setVenues(venRes.data);
+          if (!sopDocRes.error && sopDocRes.data) setSopDocuments(sopDocRes.data);
+          if (!sopAckRes.error && sopAckRes.data) setSopAcknowledgements(sopAckRes.data);
+          if (!eqRes.error && eqRes.data) setEquipmentList(eqRes.data);
+          if (!tlRes.error && tlRes.data) setTempLogs(tlRes.data);
+          if (!fsRes.error && fsRes.data) setFoodSamples(fsRes.data);
+          if (!licRes.error && licRes.data) setLicenses(licRes.data);
           if (!stfRes.error && stfRes.data) {
+            setStaffRawList(stfRes.data);
             const mapper: Record<string, string> = {};
             stfRes.data.forEach((s) => {
               mapper[s.id] = s.full_name;
@@ -414,6 +514,98 @@ function DashboardContent() {
   }, [groupVisits, startDateOnly, endDateOnly]);
 
   const overallIncidentRate = totalGroupsServed > 0 ? (totalIncidents / totalGroupsServed) * 100 : 0;
+
+  // Food Safety computations
+  const outOfRangeLogsToday = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    return tempLogs.filter((log) => {
+      const logDayStr = new Date(log.logged_at).toLocaleDateString("en-CA");
+      return logDayStr === todayStr && log.is_out_of_range;
+    });
+  }, [tempLogs]);
+
+  const totalTempLogsToday = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    return tempLogs.filter((log) => {
+      const logDayStr = new Date(log.logged_at).toLocaleDateString("en-CA");
+      return logDayStr === todayStr;
+    }).length;
+  }, [tempLogs]);
+
+  const foodSamplesToday = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    return foodSamples.filter((sample) => {
+      return sample.sample_date === todayStr;
+    });
+  }, [foodSamples]);
+
+  const attpChecklistStats = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    const attpTemplates = checklistTemplates.filter((t) => t.phase === "ATTP" && t.is_active);
+    const attpEntries = checklistEntries.filter((e) => e.work_date === todayStr);
+
+    const total = attpTemplates.length;
+    const done = attpEntries.filter((e) => e.is_done && attpTemplates.some((t) => t.id === e.template_id)).length;
+
+    return {
+      total,
+      done,
+      percent: total > 0 ? Math.round((done / total) * 100) : 0,
+    };
+  }, [checklistTemplates, checklistEntries]);
+
+  const expiringLicenses = useMemo(() => {
+    const now = new Date().getTime();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    return licenses.slice(0, 5).map((l) => {
+      const daysLeft = Math.ceil((new Date(l.expires_on).getTime() - now) / oneDayMs);
+      let badgeColor = "bg-emerald-950/40 border-emerald-900 text-emerald-450";
+      if (daysLeft < 7) {
+        badgeColor = "bg-rose-950/40 border-rose-900 text-rose-450 animate-pulse";
+      } else if (daysLeft < 30) {
+        badgeColor = "bg-orange-950/40 border-orange-900 text-orange-400";
+      } else if (daysLeft < 60) {
+        badgeColor = "bg-yellow-950/30 border-yellow-900 text-yellow-450";
+      }
+      return {
+        ...l,
+        daysLeft,
+        badgeColor,
+      };
+    });
+  }, [licenses]);
+
+  const next7DaysBookings = useMemo(() => {
+    const now = new Date();
+    const next7Days = new Date();
+    next7Days.setDate(now.getDate() + 7);
+
+    return bookings.filter((b) => {
+      const bStart = new Date(b.starts_at);
+      return bStart >= now && bStart <= next7Days;
+    }).sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  }, [bookings]);
+
+  const isTentativeAndTooOld = (b: any) => {
+    if (b.status !== "TENTATIVE") return false;
+    const createdAt = new Date(b.created_at).getTime();
+    const now = new Date().getTime();
+    return (now - createdAt) > (48 * 60 * 60 * 1000); // 48 hours
+  };
+
+  const missingAcks = useMemo(() => {
+    return sopDocuments.map((sop) => {
+      const missingStaff = staffRawList.filter((sMember) => {
+        return !sopAcknowledgements.some(
+          (ack) => ack.sop_id === sop.id && ack.staff_id === sMember.id
+        );
+      });
+      return {
+        sop,
+        missingStaff,
+      };
+    });
+  }, [sopDocuments, staffRawList, sopAcknowledgements]);
 
   const typeSummary = useMemo(() => {
     return incidentTypes.map((t) => {
@@ -549,6 +741,50 @@ function DashboardContent() {
     });
   };
 
+  const handleSaveIncident = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingIncident || isSavingIncident) return;
+
+    setIsSavingIncident(true);
+    const supabase = createClient();
+    try {
+      const { error } = await supabase
+        .from("incidents")
+        .update({
+          status: editStatus,
+          assigned_to: editAssignedTo || null,
+          resolution_note: editResolutionNote || null,
+          resolved_at: editResolvedAt ? new Date(editResolvedAt).toISOString() : null,
+          agency_followed_up: editAgencyFollowedUp,
+        })
+        .eq("id", editingIncident.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setIncidents((prev) =>
+        prev.map((inc) =>
+          inc.id === editingIncident.id
+            ? {
+                ...inc,
+                status: editStatus as any,
+                assigned_to: editAssignedTo || null,
+                resolution_note: editResolutionNote || null,
+                resolved_at: editResolvedAt ? new Date(editResolvedAt).toISOString() : null,
+                agency_followed_up: editAgencyFollowedUp,
+              }
+            : inc
+        )
+      );
+
+      setEditingIncident(null);
+    } catch (err: any) {
+      alert("Lỗi cập nhật sự cố: " + err.message);
+    } finally {
+      setIsSavingIncident(false);
+    }
+  };
+
   return (
     <main className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 pb-16">
       {/* Header */}
@@ -642,6 +878,36 @@ function DashboardContent() {
             }`}
           >
             🏢 Sức Khỏe Agency
+          </button>
+          <button
+            onClick={() => setActiveTab("bookings")}
+            className={`py-3 px-6 text-sm font-semibold border-b-2 transition ${
+              activeTab === "bookings"
+                ? "border-amber-500 text-white"
+                : "border-transparent text-zinc-450 hover:text-zinc-350"
+            }`}
+          >
+            📅 Booking 7 Ngày
+          </button>
+          <button
+            onClick={() => setActiveTab("staff")}
+            className={`py-3 px-6 text-sm font-semibold border-b-2 transition ${
+              activeTab === "staff"
+                ? "border-amber-500 text-white"
+                : "border-transparent text-zinc-450 hover:text-zinc-350"
+            }`}
+          >
+            👥 Ký SOP Đội Ngũ
+          </button>
+          <button
+            onClick={() => setActiveTab("safety" as any)}
+            className={`py-3 px-6 text-sm font-semibold border-b-2 transition ${
+              activeTab === ("safety" as any)
+                ? "border-amber-500 text-white"
+                : "border-transparent text-zinc-450 hover:text-zinc-355"
+            }`}
+          >
+            🛡️ An Toàn & Tuân Thủ
           </button>
         </div>
       </div>
@@ -741,35 +1007,224 @@ function DashboardContent() {
               <div className="text-center py-6 text-zinc-500 text-sm">Chưa có sự cố nào được ghi nhận.</div>
             ) : (
               <div className="space-y-3">
-                {weekIncidents.map((inc) => (
-                  <div key={inc.id} className="rounded-xl border border-zinc-850 bg-zinc-900/30 p-4 text-sm space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold text-zinc-200">
-                        {incidentTypes.find(t => t.value === inc.type)?.label || inc.type}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                        inc.severity === 3 
-                          ? "bg-rose-950/60 text-rose-300 border border-rose-800" 
-                          : inc.severity === 2
-                          ? "bg-orange-950/60 text-orange-300 border border-orange-800"
-                          : "bg-emerald-950/60 text-emerald-300 border border-emerald-800"
-                      }`}>
-                        Mức {inc.severity}
-                      </span>
-                    </div>
-                    <div className="text-xs text-zinc-550">
-                      Ca: {inc.shift === "TRUA" ? "Trưa" : "Tối"} | Bàn: {inc.group_name || "—"} | Agency: {inc.agency_id ? agencies.find(a=>a.id===inc.agency_id)?.name : inc.agency || "—"} | Thời điểm: {new Date(inc.occurred_at).toLocaleTimeString("vi-VN")} - {formatDate(new Date(inc.occurred_at))}
-                    </div>
-                    {inc.description && (
-                      <div className="text-zinc-450 mt-1 font-mono text-xs">
-                        Chi tiết: {inc.description}
+                {weekIncidents.map((inc) => {
+                  const statusColors: Record<string, string> = {
+                    OPEN: "bg-red-950/50 text-red-400 border-red-900/40",
+                    IN_PROGRESS: "bg-amber-950/50 text-amber-400 border-amber-900/40",
+                    RESOLVED: "bg-emerald-950/50 text-emerald-450 border-emerald-900/40",
+                    FOLLOWED_UP: "bg-blue-950/50 text-blue-400 border-blue-900/40",
+                  };
+                  const statusLabels: Record<string, string> = {
+                    OPEN: "Mở (Open)",
+                    IN_PROGRESS: "Đang xử lý",
+                    RESOLVED: "Đã giải quyết",
+                    FOLLOWED_UP: "Đã chăm sóc agency",
+                  };
+                  const currentStatus = inc.status || "OPEN";
+                  const statusClass = statusColors[currentStatus] || "bg-zinc-850 text-zinc-400 border-zinc-750";
+                  const statusLabel = statusLabels[currentStatus] || currentStatus;
+
+                  return (
+                    <div key={inc.id} className="rounded-xl border border-zinc-850 bg-zinc-900/30 p-4 text-sm space-y-2">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-zinc-200">
+                              {incidentTypes.find(t => t.value === inc.type)?.label || inc.type}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${statusClass}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+                          <div className="text-xs text-zinc-550">
+                            Ca: {inc.shift === "TRUA" ? "Trưa" : "Tối"} | Bàn: {inc.group_name || "—"} | Agency: {inc.agency_id ? agencies.find(a=>a.id===inc.agency_id)?.name : inc.agency || "—"} | Thời điểm: {new Date(inc.occurred_at).toLocaleTimeString("vi-VN")} - {formatDate(new Date(inc.occurred_at))}
+                          </div>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold shrink-0 ${
+                          inc.severity === 3 
+                            ? "bg-rose-950/60 text-rose-300 border border-rose-800" 
+                            : inc.severity === 2
+                            ? "bg-orange-950/60 text-orange-300 border border-orange-800"
+                            : "bg-emerald-950/60 text-emerald-300 border border-emerald-800"
+                        }`}>
+                          Mức {inc.severity}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      
+                      {inc.description && (
+                        <div className="text-zinc-400 font-mono text-xs bg-zinc-950/40 p-2.5 rounded border border-zinc-900">
+                          <strong>Chi tiết:</strong> {inc.description}
+                        </div>
+                      )}
+
+                      {/* Display Handling Info */}
+                      {(inc.assigned_to || inc.resolution_note || inc.resolved_at || inc.agency_followed_up) && (
+                        <div className="text-xs space-y-1.5 border-t border-zinc-900/50 pt-2 text-zinc-400">
+                          {inc.assigned_to && (
+                            <div>
+                              👤 <strong>Nhân sự xử lý:</strong> {staffList[inc.assigned_to] || "N/A"}
+                            </div>
+                          )}
+                          {inc.resolution_note && (
+                            <div className="italic text-zinc-300 bg-zinc-950/20 p-2 rounded border border-zinc-900/50">
+                              💬 <strong>Giải pháp:</strong> {inc.resolution_note}
+                            </div>
+                          )}
+                          {inc.resolved_at && (
+                            <div className="text-[10px] text-zinc-500">
+                              ✓ <strong>Hoàn thành lúc:</strong> {new Date(inc.resolved_at).toLocaleString("vi-VN")}
+                            </div>
+                          )}
+                          {inc.agency_followed_up && (
+                            <div className="text-blue-400 font-semibold flex items-center gap-1">
+                              📞 Đã liên hệ chăm sóc lại Agency
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Edit Button for Manager/Owner */}
+                      {isWriteAllowed && (
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingIncident(inc);
+                              setEditStatus(inc.status || "OPEN");
+                              setEditAssignedTo(inc.assigned_to || "");
+                              setEditResolutionNote(inc.resolution_note || "");
+                              setEditResolvedAt(inc.resolved_at ? new Date(inc.resolved_at).toISOString().slice(0, 16) : "");
+                              setEditAgencyFollowedUp(!!inc.agency_followed_up);
+                            }}
+                            className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-750 text-xs font-semibold text-zinc-300 transition"
+                          >
+                            ⚙️ Cập nhật xử lý
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
+
+          {/* Edit Incident Modal */}
+          {editingIncident && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl space-y-4">
+                <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+                  <h3 className="text-sm font-bold text-white">⚙️ Cập nhật xử lý sự cố</h3>
+                  <button
+                    onClick={() => setEditingIncident(null)}
+                    className="text-zinc-500 hover:text-zinc-300"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Read-only Context Fields */}
+                <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-850 text-xs space-y-1.5 text-zinc-400">
+                  <div>
+                    <strong>Loại sự cố:</strong> {incidentTypes.find(t => t.value === editingIncident.type)?.label || editingIncident.type}
+                  </div>
+                  <div>
+                    <strong>Mức độ:</strong> Mức {editingIncident.severity}
+                  </div>
+                  <div>
+                    <strong>Thời điểm xảy ra:</strong> {new Date(editingIncident.occurred_at).toLocaleString("vi-VN")}
+                  </div>
+                  {editingIncident.description && (
+                    <div>
+                      <strong>Mô tả:</strong> {editingIncident.description}
+                    </div>
+                  )}
+                </div>
+
+                <form onSubmit={handleSaveIncident} className="space-y-4 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-zinc-400">Trạng thái xử lý *</label>
+                    <select
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-850 bg-zinc-950 px-3 py-2 text-white outline-none focus:border-amber-500"
+                      required
+                    >
+                      <option value="OPEN">Mở (Open)</option>
+                      <option value="IN_PROGRESS">Đang xử lý (In Progress)</option>
+                      <option value="RESOLVED">Đã giải quyết (Resolved)</option>
+                      <option value="FOLLOWED_UP">Đã chăm sóc agency (Followed Up)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-zinc-400">Nhân sự phụ trách xử lý</label>
+                    <select
+                      value={editAssignedTo}
+                      onChange={(e) => setEditAssignedTo(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-850 bg-zinc-950 px-3 py-2 text-white outline-none focus:border-amber-500"
+                    >
+                      <option value="">-- Chọn nhân sự --</option>
+                      {staffRawList.map((s) => (
+                        <option key={s.id} value={s.id}>{s.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-zinc-400">Ghi chú giải pháp / Hướng khắc phục</label>
+                    <textarea
+                      rows={2}
+                      placeholder="Ghi chú rõ phương án đền bù, xử lý hoặc giải quyết với khách..."
+                      value={editResolutionNote}
+                      onChange={(e) => setEditResolutionNote(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-850 bg-zinc-950 px-3 py-2 text-white outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-zinc-400">Thời điểm giải quyết xong</label>
+                    <input
+                      type="datetime-local"
+                      value={editResolvedAt}
+                      onChange={(e) => setEditResolvedAt(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-850 bg-zinc-950 px-3 py-2 text-white outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2 pt-1">
+                    <input
+                      id="agencyFollowedUp"
+                      type="checkbox"
+                      checked={editAgencyFollowedUp}
+                      onChange={(e) => setEditAgencyFollowedUp(e.target.checked)}
+                      className="h-4 w-4 rounded border-zinc-800 bg-zinc-950 text-amber-500 accent-amber-500"
+                    />
+                    <label htmlFor="agencyFollowedUp" className="font-semibold text-zinc-300 cursor-pointer">
+                      Đã chăm sóc / Liên hệ phản hồi lại với Agency?
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-3 border-t border-zinc-850">
+                    <button
+                      type="button"
+                      onClick={() => setEditingIncident(null)}
+                      className="px-4 py-2 rounded-lg border border-zinc-850 text-zinc-400 hover:bg-zinc-800"
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingIncident}
+                      className="px-5 py-2 rounded-lg bg-amber-500 font-bold text-zinc-950 hover:bg-amber-400 transition disabled:opacity-50"
+                    >
+                      {isSavingIncident ? "Đang lưu..." : "Lưu thay đổi"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       ) : activeTab === "reports" ? (
         /* SHIFT REPORTS TAB CONTENT */
@@ -892,7 +1347,7 @@ function DashboardContent() {
             ))}
           </div>
         </div>
-      ) : (
+      ) : activeTab === "agencies" ? (
         /* AGENCY HEALTH TAB CONTENT */
         <div className="mx-auto w-full max-w-4xl px-4 mt-6 space-y-6">
           <div className="rounded-2xl border border-zinc-850 bg-zinc-900/20 p-6">
@@ -961,7 +1416,7 @@ function DashboardContent() {
                               ↓ ({row.paxTrend})
                             </span>
                           ) : (
-                            <span className="text-zinc-500 font-bold text-xs flex items-center justify-center">
+                            <span className="text-zinc-555 font-bold text-xs flex items-center justify-center">
                               →
                             </span>
                           )}
@@ -995,7 +1450,265 @@ function DashboardContent() {
             </div>
           </div>
         </div>
-      )}
+      ) : activeTab === "bookings" ? (
+        /* BOOKINGS TAB CONTENT */
+        <div className="mx-auto w-full max-w-4xl px-4 mt-6 space-y-6">
+          <div className="rounded-2xl border border-zinc-850 bg-zinc-900/20 p-6">
+            <h2 className="text-base font-bold text-white mb-2">Đoàn & Sự Kiện Trong 7 Ngày Tới</h2>
+            <p className="text-xs text-zinc-450 mb-6">
+              Danh sách đặt đoàn sắp tới trong vòng 7 ngày. Các đoàn ở trạng thái <span className="text-yellow-400 font-semibold">Tạm đặt (TENTATIVE) quá 48 giờ</span> kể từ lúc tạo sẽ được tô vàng cảnh báo để Owner kịp thời liên hệ chốt giữ chỗ.
+            </p>
+
+            {next7DaysBookings.length === 0 ? (
+              <div className="text-center py-12 border border-dashed border-zinc-850 rounded-2xl text-zinc-550 text-xs italic">
+                Không có lịch đặt đoàn nào trong 7 ngày tới.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {next7DaysBookings.map((b) => {
+                  const tooOld = isTentativeAndTooOld(b);
+                  const startStr = new Date(b.starts_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+                  const endStr = new Date(b.ends_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+                  const name = b.group_name || b.agency_name_raw || b.agencies?.name || "Khách lẻ";
+
+                  return (
+                    <div
+                      key={b.id}
+                      className={`rounded-xl border p-4 text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition ${
+                        tooOld 
+                          ? "bg-yellow-950/20 border-yellow-500/50 shadow-md shadow-yellow-500/5" 
+                          : "bg-zinc-950/40 border-zinc-850"
+                      }`}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-sm text-zinc-200">{name}</span>
+                          {tooOld && (
+                            <span className="bg-yellow-500 text-zinc-950 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider animate-pulse">
+                              ⚠️ Quá 48h chưa chốt
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-zinc-450 font-medium">
+                          Sảnh: <span className="text-zinc-300 font-bold">{b.venues?.name}</span> • Số khách: <span className="text-zinc-300 font-bold">{b.pax} pax</span> (Sức chứa: {b.venues?.capacity})
+                        </div>
+                        <div className="text-zinc-550 font-mono text-[10px]">
+                          Thời gian: {startStr} - {endStr}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <span className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                          b.status === "CONFIRMED"
+                            ? "bg-emerald-950/60 border-emerald-900 text-emerald-440"
+                            : b.status === "TENTATIVE"
+                            ? "bg-yellow-950/60 border-yellow-900/60 text-yellow-400"
+                            : "bg-zinc-800 border-zinc-750 text-zinc-450"
+                        }`}>
+                          {b.status === "CONFIRMED" ? "XÁC NHẬN" : b.status === "TENTATIVE" ? "TẠM ĐẶT" : b.status}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : activeTab === "staff" ? (
+        /* STAFF TAB CONTENT */
+        <div className="mx-auto w-full max-w-4xl px-4 mt-6 space-y-6">
+          <div className="rounded-2xl border border-zinc-850 bg-zinc-900/20 p-6">
+            <h2 className="text-base font-bold text-white mb-2">Báo Cáo Xác Nhận SOP & SPEC Nhân Sự</h2>
+            <p className="text-xs text-zinc-450 mb-6">
+              Bảng đối chiếu kiểm tra xem những nhân viên nào chưa nhấn đọc và cam kết đối với các tài liệu quy trình vận hành (SOP) hoặc công thức món chuẩn (SPEC).
+            </p>
+
+            <div className="space-y-4">
+              {missingAcks.map((item) => (
+                <div key={item.sop.id} className="rounded-xl border border-zinc-850 bg-zinc-950/40 p-4 space-y-3">
+                  <div className="flex justify-between items-center border-b border-zinc-900 pb-2">
+                    <div>
+                      <span className="font-bold text-zinc-250 text-sm">{item.sop.title}</span>
+                      <span className="text-[9px] bg-zinc-900 px-1.5 py-0.5 rounded text-zinc-550 font-mono ml-2">v{item.sop.version}</span>
+                    </div>
+                    <span className="text-[10px] text-zinc-500">
+                      Áp dụng: <span className="font-bold text-zinc-450">{item.sop.department}</span>
+                    </span>
+                  </div>
+
+                  {item.missingStaff.length === 0 ? (
+                    <div className="text-xs text-emerald-450 font-semibold flex items-center py-1">
+                      <span className="mr-1.5">✓</span> 100% nhân sự đã đọc và cam kết!
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] text-rose-350 font-bold uppercase tracking-wider block">
+                        ⚠️ Chưa cam kết ({item.missingStaff.length} người):
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {item.missingStaff.map((s) => (
+                          <span
+                            key={s.id}
+                            className="bg-rose-950/30 border border-rose-900/40 text-rose-300 px-2 py-0.5 rounded text-[10px] font-medium"
+                          >
+                            {s.full_name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : activeTab === ("safety" as any) ? (
+        /* FOOD SAFETY & COMPLIANCE TAB CONTENT */
+        <div className="mx-auto w-full max-w-4xl px-4 mt-6 space-y-6">
+          {/* Disclaimer / Warning Banner */}
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-950/5 p-4 space-y-2 text-xs">
+            <span className="font-bold text-amber-300 block">⚠️ Lưu ý kỹ thuật về định mức</span>
+            <p className="text-zinc-400 leading-relaxed">
+              Cảnh báo định mức tồn kho hiện tại chỉ mang tính chất dự báo dựa trên lượng nhập kho lũy kế (GR) và định mức tối thiểu. Hệ thống chưa triển khai phân hệ ghi xuất kho, do đó chưa phản ánh tồn kho chính xác theo thời gian thực.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Box 1: Thiết bị lệch nhiệt hôm nay */}
+            <div className="rounded-2xl border border-zinc-850 bg-zinc-900/20 p-5 space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider border-b border-zinc-900 pb-2">
+                ❄️ Hôm nay: Thiết bị lệch nhiệt độ
+              </h3>
+              {outOfRangeLogsToday.length === 0 ? (
+                <div className="text-center py-8 text-emerald-450 text-xs font-semibold">
+                  ✓ Tất cả thiết bị đều hoạt động trong ngưỡng an toàn!
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                  {outOfRangeLogsToday.map((log: any) => (
+                    <div key={log.id} className="p-3 rounded-lg border border-rose-900/35 bg-rose-950/20 text-rose-300 text-xs space-y-1">
+                      <div className="flex justify-between font-bold">
+                        <span className="text-zinc-200">{log.equipment?.name}</span>
+                        <span className="font-mono text-rose-400">{log.temp_c}°C ⚠️</span>
+                      </div>
+                      <div className="text-[10px] text-zinc-450 flex justify-between">
+                        <span>Chuẩn: {log.equipment?.min_temp}°C đến {log.equipment?.max_temp}°C</span>
+                        <span>Log: {new Date(log.logged_at).toLocaleTimeString("vi-VN", { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <p className="text-[10.5px] italic text-zinc-305 pt-1 border-t border-rose-900/20">
+                        &quot;Lý do: {log.note || "chưa ghi nhận"}&quot;
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Box 2: Trạng thái Log & Lưu mẫu hôm nay */}
+            <div className="rounded-2xl border border-zinc-850 bg-zinc-900/20 p-5 space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider border-b border-zinc-900 pb-2">
+                📋 Hôm nay: Nhật ký & Lưu mẫu ca
+              </h3>
+              
+              <div className="space-y-4 text-xs">
+                {/* Temperature Logs Count */}
+                <div className="flex justify-between items-center bg-zinc-950/40 p-3 rounded-xl border border-zinc-850">
+                  <div>
+                    <span className="font-bold text-zinc-200 block">Lượt log nhiệt tủ lạnh</span>
+                    <span className="text-[10px] text-zinc-500">Bắt buộc 2 lượt/ca cho toàn sảnh</span>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                    totalTempLogsToday >= equipmentList.length * 2
+                      ? "bg-emerald-950/40 border-emerald-900 text-emerald-450"
+                      : totalTempLogsToday > 0
+                      ? "bg-yellow-950/40 border-yellow-900/40 text-yellow-450"
+                      : "bg-rose-950/40 border-rose-900/40 text-rose-450"
+                  }`}>
+                    {totalTempLogsToday > 0 ? `Đã log ${totalTempLogsToday} lượt` : "Chưa log ca nào"}
+                  </span>
+                </div>
+
+                {/* Food Samples Count */}
+                <div className="flex justify-between items-center bg-zinc-950/40 p-3 rounded-xl border border-zinc-850">
+                  <div>
+                    <span className="font-bold text-zinc-200 block">Mẫu thực phẩm đã lưu</span>
+                    <span className="text-[10px] text-zinc-500">Giám sát 24h đối với bếp ăn lớn</span>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                    foodSamplesToday.length > 0
+                      ? "bg-emerald-950/40 border-emerald-900 text-emerald-450"
+                      : "bg-amber-950/40 border-amber-900/40 text-amber-450 animate-pulse"
+                  }`}>
+                    {foodSamplesToday.length > 0 ? `Đã lưu ${foodSamplesToday.length} mẫu` : "⚠️ Bếp chưa lưu mẫu nào hôm nay"}
+                  </span>
+                </div>
+
+                {/* Checklist ATTP entries completed today */}
+                <div className="flex justify-between items-center bg-zinc-950/40 p-3 rounded-xl border border-zinc-850">
+                  <div>
+                    <span className="font-bold text-zinc-200 block">Checklist an toàn vệ sinh</span>
+                    <span className="text-[10px] text-zinc-500">Phase ATTP kiểm soát bếp & FOH</span>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                    attpChecklistStats.percent === 100
+                      ? "bg-emerald-950/40 border-emerald-900 text-emerald-450"
+                      : attpChecklistStats.done > 0
+                      ? "bg-yellow-950/40 border-yellow-900/40 text-yellow-450"
+                      : "bg-zinc-850 border-zinc-750 text-zinc-450"
+                  }`}>
+                    {attpChecklistStats.done}/{attpChecklistStats.total} mục ({attpChecklistStats.percent}%)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Box 3: Giấy phép sắp hết hạn nhất */}
+          <div className="rounded-2xl border border-zinc-850 bg-zinc-900/20 p-6 space-y-4">
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider border-b border-zinc-900 pb-2">
+              📜 Giấy phép & Cam kết vận hành sắp hết hạn
+            </h3>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-zinc-350">
+                <thead>
+                  <tr className="border-b border-zinc-900 text-[10px] font-bold text-zinc-550 uppercase tracking-wider">
+                    <th className="py-2 px-3">Tài liệu pháp lý</th>
+                    <th className="py-2 px-3">Đơn vị cấp</th>
+                    <th className="py-2 px-3">Ngày hết hạn</th>
+                    <th className="py-2 px-3 text-center">Hạn còn lại</th>
+                    <th className="py-2 px-3">Phụ trách</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-900">
+                  {expiringLicenses.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-4 text-zinc-650 italic">Không có tài liệu nào sắp hết hạn.</td>
+                    </tr>
+                  ) : (
+                    expiringLicenses.map((l: any) => (
+                      <tr key={l.id} className="hover:bg-zinc-900/10 transition">
+                        <td className="py-3 px-3 font-bold text-zinc-200">{l.name}</td>
+                        <td className="py-3 px-3 text-zinc-450">{l.issuer || "—"}</td>
+                        <td className="py-3 px-3 font-mono">{new Date(l.expires_on).toLocaleDateString("vi-VN")}</td>
+                        <td className="py-3 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${l.badgeColor}`}>
+                            {l.daysLeft <= 0 ? "Quá hạn" : `${l.daysLeft} ngày`}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-zinc-300 font-semibold">{staffList[l.owner_staff_id] || "Chưa giao"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Shift Detail Modal */}
       {modalData && (

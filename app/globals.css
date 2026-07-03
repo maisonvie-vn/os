@@ -3,25 +3,86 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #102B2A;
+  --foreground: #ffffff;
+  --gold: #A8884E;
+  --gold-hover: #C59D5B;
+  --gold-muted: rgba(168, 136, 78, 0.15);
+  --gold-border: rgba(168, 136, 78, 0.3);
+  --card-bg: #042726;
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-gold: var(--gold);
+  --color-gold-hover: var(--gold-hover);
+  --color-gold-muted: var(--gold-muted);
+  --color-gold-border: var(--gold-border);
+  --color-card-bg: var(--card-bg);
+  --font-serif: var(--font-serif);
+  --font-sans: var(--font-sans);
 }
 
 body {
-  color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  background-image:
+    radial-gradient(ellipse at 50% -20%, rgba(168, 136, 78, 0.12), transparent 70%),
+    radial-gradient(ellipse at 0% 100%, rgba(168, 136, 78, 0.05), transparent 50%);
+  background-attachment: fixed;
+  min-height: 100vh;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* Neoclassical subtle borders and lines */
+.neo-border {
+  border: 1px solid var(--gold-border);
+}
+
+.neo-border-b {
+  border-bottom: 1px solid var(--gold-border);
+}
+
+.neo-border-t {
+  border-top: 1px solid var(--gold-border);
+}
+
+.neo-border-r {
+  border-right: 1px solid var(--gold-border);
+}
+
+.neo-border-l {
+  border-left: 1px solid var(--gold-border);
+}
+
+/* Glassmorphism panel */
+.glass-panel {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--gold-border);
+}
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, #FFF 0%, #C59D5B 50%, #A8884E 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Serif font helper */
+.font-serif-cormorant {
+  font-family: var(--font-serif);
+}
+
+/* Micro-animations */
+.hover-gold-glow {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-gold-glow:hover {
+  border-color: var(--gold-hover);
+  box-shadow: 0 0 15px rgba(168, 136, 78, 0.2);
+  transform: translateY(-1px);
 }

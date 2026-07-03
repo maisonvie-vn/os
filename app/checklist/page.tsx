@@ -16,7 +16,7 @@ interface Staff {
 interface ChecklistTemplate {
   id: string;
   shift: "TRUA" | "TOI";
-  phase: "MO_CA" | "DONG_CA";
+  phase: "MO_CA" | "DONG_CA" | "ATTP";
   item_order: number;
   content: string;
   is_active: boolean;
@@ -45,7 +45,7 @@ function ChecklistContent() {
   // Filters for checklist execution
   const [workDate, setWorkDate] = useState<string>("");
   const [shift, setShift] = useState<"TRUA" | "TOI">("TRUA");
-  const [phase, setPhase] = useState<"MO_CA" | "DONG_CA">("MO_CA");
+  const [phase, setPhase] = useState<"MO_CA" | "DONG_CA" | "ATTP">("MO_CA");
 
   // Data states
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([]);
@@ -56,7 +56,7 @@ function ChecklistContent() {
 
   // Template management states
   const [manageShift, setManageShift] = useState<"TRUA" | "TOI">("TRUA");
-  const [managePhase, setManagePhase] = useState<"MO_CA" | "DONG_CA">("MO_CA");
+  const [managePhase, setManagePhase] = useState<"MO_CA" | "DONG_CA" | "ATTP">("MO_CA");
   const [newContent, setNewContent] = useState("");
   const [newOrder, setNewOrder] = useState("");
   const [isEditingTemplateId, setIsEditingTemplateId] = useState<string | null>(null);
@@ -569,10 +569,10 @@ function ChecklistContent() {
               <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">
                 Giai đoạn
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => setPhase("MO_CA")}
-                  className={`py-3 rounded-xl text-xs font-bold transition border flex items-center justify-center space-x-2 ${
+                  className={`py-3 rounded-xl text-xs font-bold transition border flex items-center justify-center space-x-1.5 ${
                     phase === "MO_CA"
                       ? "bg-amber-500/10 border-amber-500 text-amber-300"
                       : "bg-zinc-950 border-zinc-800 text-zinc-400"
@@ -583,7 +583,7 @@ function ChecklistContent() {
                 </button>
                 <button
                   onClick={() => setPhase("DONG_CA")}
-                  className={`py-3 rounded-xl text-xs font-bold transition border flex items-center justify-center space-x-2 ${
+                  className={`py-3 rounded-xl text-xs font-bold transition border flex items-center justify-center space-x-1.5 ${
                     phase === "DONG_CA"
                       ? "bg-amber-500/10 border-amber-500 text-amber-300"
                       : "bg-zinc-950 border-zinc-800 text-zinc-400"
@@ -591,6 +591,17 @@ function ChecklistContent() {
                 >
                   <span className="text-sm">🔒</span>
                   <span>Đóng Ca</span>
+                </button>
+                <button
+                  onClick={() => setPhase("ATTP")}
+                  className={`py-3 rounded-xl text-xs font-bold transition border flex items-center justify-center space-x-1.5 ${
+                    phase === "ATTP"
+                      ? "bg-amber-500/10 border-amber-500 text-amber-300"
+                      : "bg-zinc-950 border-zinc-800 text-zinc-400"
+                  }`}
+                >
+                  <span className="text-sm">🍏</span>
+                  <span>ATTP</span>
                 </button>
               </div>
             </div>
@@ -722,7 +733,7 @@ function ChecklistContent() {
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1">
                   Mẫu giai đoạn
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => setManagePhase("MO_CA")}
                     className={`py-2 rounded-xl text-xs font-bold transition border ${
@@ -742,6 +753,16 @@ function ChecklistContent() {
                     }`}
                   >
                     Đóng Ca
+                  </button>
+                  <button
+                    onClick={() => setManagePhase("ATTP")}
+                    className={`py-2 rounded-xl text-xs font-bold transition border ${
+                      managePhase === "ATTP"
+                        ? "bg-amber-500/10 border-amber-500 text-amber-300"
+                        : "bg-zinc-950 border-zinc-800 text-zinc-400"
+                    }`}
+                  >
+                    ATTP
                   </button>
                 </div>
               </div>

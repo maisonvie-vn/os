@@ -122,21 +122,111 @@ export default async function HomePage() {
               >
                 ⚠️ Ghi Nhận Sự Cố
               </Link>
-              {(staff.role === "owner" || staff.role === "manager") && (
-                <Link
-                  href="/agencies"
-                  className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
-                >
-                  🏢 Quản Lý Agency
-                </Link>
-              )}
-              {staff.role === "owner" && (
+              <Link
+                href="/bookings"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                📅 Đặt Sảnh & Sự Kiện
+              </Link>
+              <Link
+                href="/sops"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                📚 Thư Viện SOP & SPEC
+              </Link>
+              <Link
+                href="/purchasing"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                🛒 Yêu Cầu Đặt Hàng (PO)
+              </Link>
+              <Link
+                href="/receiving"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                📦 Nhận Hàng Phiếu Kho
+              </Link>
+              <Link
+                href="/invoices"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                📄 Nhập Hóa Đơn NCC
+              </Link>
+              <Link
+                href="/emails"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                ✉️ Soạn Thư Agency
+              </Link>
+              <Link
+                href="/items"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                🗂️ Danh Mục & Định Mức
+              </Link>
+              <Link
+                href="/temps"
+                className="rounded-xl border border-zinc-850 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                ❄️ Log Nhiệt Bếp
+              </Link>
+              <Link
+                href="/samples"
+                className="rounded-xl border border-zinc-850 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                🍲 Lưu Mẫu Bếp
+              </Link>
+              <Link
+                href="/licenses"
+                className="rounded-xl border border-zinc-850 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+              >
+                📜 Giấy Phép & Hạn
+              </Link>
+              {(staff.role === "owner" || staff.role === "manager" || staff.role === "finance") && (
                 <Link
                   href="/dashboard"
                   className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-6 py-4 text-center text-sm font-bold text-amber-300 hover:bg-amber-500/20 transition"
                 >
                   📊 Báo Cáo Tổng Hợp
                 </Link>
+              )}
+              {(staff.role === "owner" || staff.role === "manager") && (
+                <>
+                  <Link
+                    href="/agencies"
+                    className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+                  >
+                    🏢 Quản Lý Agency
+                  </Link>
+                  <Link
+                    href="/team"
+                    className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-4 text-center text-sm font-bold text-white hover:bg-zinc-800/80 transition"
+                  >
+                    👥 Hồ Sơ Nhân Sự
+                  </Link>
+                </>
+              )}
+              {(staff.role === "owner" || staff.role === "finance") && (
+                <>
+                  <Link
+                    href="/ledger"
+                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-6 py-4 text-center text-sm font-bold text-amber-300 hover:bg-amber-500/20 transition"
+                  >
+                    📒 Sổ Nợ Agency (Ledger)
+                  </Link>
+                  <Link
+                    href="/approvals"
+                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-6 py-4 text-center text-sm font-bold text-amber-300 hover:bg-amber-500/20 transition"
+                  >
+                    🛡️ Duyệt Chi Hóa Đơn
+                  </Link>
+                  <Link
+                    href="/finance"
+                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-6 py-4 text-center text-sm font-bold text-amber-300 hover:bg-amber-500/20 transition"
+                  >
+                    💰 Tài Chính & Doanh Thu
+                  </Link>
+                </>
               )}
             </div>
 
